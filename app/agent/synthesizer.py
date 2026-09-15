@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from app.models.schemas import (
     BibliographicVerificationRecord,
@@ -105,14 +106,17 @@ class ReportSynthesizer:
 
     @staticmethod
     def _entity_matches_paper(entity: str, paper: Paper) -> bool:
-        """Match an entity using canonical aliases plus title/abstract vocabulary."""
+        """Match an entity using aliases without substring false positives."""
         text = f"{paper.title} {paper.abstract or ''}".lower()
         normalized = entity.strip().lower()
         aliases = {
             "ai": ("ai", "artificial intelligence"),
             "ml": ("ml", "machine learning"),
         }.get(normalized, (normalized,))
-        return any(alias in text for alias in aliases)
+        return any(
+            re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", text)
+            for alias in aliases
+        )
 
     @staticmethod
     def _claim_matches_dimension(claim: Claim, dimension_keywords: tuple[str, ...]) -> bool:
@@ -176,11 +180,7 @@ class ReportSynthesizer:
         verifications: list[BibliographicVerificationRecord],
     ) -> ResearchReport:
         sources = list(dict.fromkeys(s for p in papers for s in p.sources)) or [
-            "openalex",
-            "semantic_scholar",
-            "crossref",
-            "arxiv",
-            "pubmed",
+            "openalex", "semantic_scholar", "crossref", "arxiv", "pubmed",
         ]
         findings = [f"[{c.paper_id}] {c.claim_text}" for c in claims[:8]] or [
             f"Retrieved {len(papers)} relevant academic works addressing '{plan.main_question}'."
@@ -198,24 +198,16 @@ class ReportSynthesizer:
             for p in papers[:6]
         ]
         limitations = [
-            f"[{c.paper_id}] {c.claim_text}"
-            for c in claims
-            if c.evidence_type.value == "limitation"
+            f"[{c.paper_id}] {c.claim_text}" for c in claims if c.evidence_type.value == "limitation"
         ] or [
-            f"[{g.supporting_evidence[0]}] {g.description}"
-            for g in gaps
-            if g.supporting_evidence
+            f"[{g.supporting_evidence[0]}] {g.description}" for g in gaps if g.supporting_evidence
         ]
 
         return ResearchReport(
             research_question=plan.main_question,
             executive_summary=(
                 f"This report examines '{plan.main_question}' using {len(sources)} academic source families and {len(papers)} relevant papers. "
-                + (
-                    f"The request was recognized as comparative across {', '.join(plan.entities)}."
-                    if plan.comparative
-                    else "The request was recognized as a single-topic research task."
-                )
+                + (f"The request was recognized as comparative across {', '.join(plan.entities)}." if plan.comparative else "The request was recognized as a single-topic research task.")
             ),
             research_methodology="Systematic multi-pass academic discovery with deterministic deduplication, entity-based relevance ranking, evidence extraction, contradiction analysis, and bibliography verification.",
             academic_sources_searched=sources,
