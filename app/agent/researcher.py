@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import logging
 from typing import Callable
+
 from app.config import config
-from app.models.schemas import Paper, ResearchReport, PassType
+from app.models.schemas import Paper, ResearchReport
 from app.agent.ollama_client import OllamaClient
 from app.agent.planner import ResearchPlanner
 from app.agent.synthesizer import ReportSynthesizer
@@ -20,7 +21,13 @@ logger = logging.getLogger(__name__)
 
 
 class ResearcherAgent:
-    def __init__(self, ollama_client: OllamaClient | None = None, search_coordinator: SearchCoordinator | None = None, progress_callback: Callable[[str], None] | None = None, verify_bibliography: bool = True):
+    def __init__(
+        self,
+        ollama_client: OllamaClient | None = None,
+        search_coordinator: SearchCoordinator | None = None,
+        progress_callback: Callable[[str], None] | None = None,
+        verify_bibliography: bool = True,
+    ):
         self.ollama_client = ollama_client or OllamaClient()
         self.search_coordinator = search_coordinator or SearchCoordinator()
         self.planner = ResearchPlanner(self.ollama_client)
@@ -35,7 +42,12 @@ class ResearcherAgent:
         logger.info(msg)
         self.progress_callback(msg)
 
-    def run(self, question: str, max_iterations: int | None = None, max_papers: int | None = None) -> ResearchReport:
+    def run(
+        self,
+        question: str,
+        max_iterations: int | None = None,
+        max_papers: int | None = None,
+    ) -> ResearchReport:
         limit_iterations = config.MAX_RESEARCH_ITERATIONS if max_iterations is None else max_iterations
         limit_papers = config.MAX_PAPERS_TOTAL if max_papers is None else max_papers
         if limit_iterations < 1 or limit_papers < 1:
@@ -80,7 +92,7 @@ class ResearcherAgent:
         self.log_progress("Phase 4/6: Ranking papers using extracted entity vocabulary...")
         ranked_papers = rank_papers(
             unique_papers,
-            query_text=plan.cleaned_question if hasattr(plan, "cleaned_question") else " ".join(plan.entities),
+            query_text=self.planner.last_cleaned_question or " ".join(plan.entities),
             target_concept=" ".join(plan.entities),
             concept_vocabulary=plan.entities,
             assign_ids=True,
@@ -99,8 +111,13 @@ class ResearcherAgent:
 
         self.log_progress("Phase 6/6: Synthesizing final structured academic report...")
         report = self.synthesizer.synthesize_report(
-            plan=plan, papers=selected_papers, claims=claims, evidence_records=evidence_records,
-            contradictions=contradictions, gaps=research_gaps, verifications=verifications,
+            plan=plan,
+            papers=selected_papers,
+            claims=claims,
+            evidence_records=evidence_records,
+            contradictions=contradictions,
+            gaps=research_gaps,
+            verifications=verifications,
         )
         self.log_progress("Academic research process complete.")
         return report
