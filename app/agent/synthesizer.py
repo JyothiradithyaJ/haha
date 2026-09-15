@@ -53,9 +53,7 @@ class ReportSynthesizer:
                             category=category,
                             description=str(item["description"]).strip(),
                             supporting_evidence=evidence or [papers[0].internal_id],
-                            proposed_directions=[
-                                str(x).strip() for x in item.get("proposed_directions", []) if x
-                            ],
+                            proposed_directions=[str(x).strip() for x in item.get("proposed_directions", []) if x],
                         )
                     )
             if gaps:
@@ -71,30 +69,9 @@ class ReportSynthesizer:
             return [ids[index]] if len(ids) > index else (ids[:1] if ids else [])
 
         return [
-            ResearchGap(
-                gap_id="GAP-01",
-                category=GapCategory.GENERALIZATION_GAP,
-                description="Limited evidence about whether reported findings generalize across datasets, populations, settings, or implementations beyond those studied.",
-                supporting_evidence=evidence(0),
-                proposed_directions=[
-                    "Evaluate on independent heterogeneous datasets",
-                    "Report sensitivity analyses for important sources of variation",
-                ],
-            ),
-            ResearchGap(
-                gap_id="GAP-02",
-                category=GapCategory.REPRODUCIBILITY_GAP,
-                description="Insufficient reporting of implementation details, data preparation, and evaluation protocols to support independent reproduction.",
-                supporting_evidence=evidence(1),
-                proposed_directions=["Publish complete evaluation protocols and implementation details"],
-            ),
-            ResearchGap(
-                gap_id="GAP-03",
-                category=GapCategory.METHODOLOGICAL_GAP,
-                description="Uncertainty remains about which methodological choices drive reported outcomes and under what conditions they fail.",
-                supporting_evidence=evidence(2),
-                proposed_directions=["Use ablation studies and controlled comparisons"],
-            ),
+            ResearchGap(gap_id="GAP-01", category=GapCategory.GENERALIZATION_GAP, description="Limited evidence about whether reported findings generalize across datasets, populations, settings, or implementations beyond those studied.", supporting_evidence=evidence(0), proposed_directions=["Evaluate on independent heterogeneous datasets", "Report sensitivity analyses for important sources of variation"]),
+            ResearchGap(gap_id="GAP-02", category=GapCategory.REPRODUCIBILITY_GAP, description="Insufficient reporting of implementation details, data preparation, and evaluation protocols to support independent reproduction.", supporting_evidence=evidence(1), proposed_directions=["Publish complete evaluation protocols and implementation details"]),
+            ResearchGap(gap_id="GAP-03", category=GapCategory.METHODOLOGICAL_GAP, description="Uncertainty remains about which methodological choices drive reported outcomes and under what conditions they fail.", supporting_evidence=evidence(2), proposed_directions=["Use ablation studies and controlled comparisons"]),
         ]
 
     def _parse_gap_category(self, raw: str) -> GapCategory:
@@ -109,14 +86,8 @@ class ReportSynthesizer:
         """Match an entity using aliases without substring false positives."""
         text = f"{paper.title} {paper.abstract or ''}".lower()
         normalized = entity.strip().lower()
-        aliases = {
-            "ai": ("ai", "artificial intelligence"),
-            "ml": ("ml", "machine learning"),
-        }.get(normalized, (normalized,))
-        return any(
-            re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", text)
-            for alias in aliases
-        )
+        aliases = {"ai": ("ai", "artificial intelligence"), "ml": ("ml", "machine learning")}.get(normalized, (normalized,))
+        return any(re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", text) for alias in aliases)
 
     @staticmethod
     def _claim_matches_dimension(claim: Claim, dimension_keywords: tuple[str, ...]) -> bool:
@@ -125,12 +96,7 @@ class ReportSynthesizer:
         return any(keyword in text for keyword in dimension_keywords)
 
     @classmethod
-    def _comparison_table(
-        cls,
-        plan: ResearchPlan,
-        papers: list[Paper],
-        claims: list[Claim],
-    ) -> list[dict[str, str]]:
+    def _comparison_table(cls, plan: ResearchPlan, papers: list[Paper], claims: list[Claim]) -> list[dict[str, str]]:
         """Build comparison rows only from evidence attributable to each entity/dimension."""
         entities = plan.entities
         if not plan.comparative or len(entities) < 2:
@@ -151,64 +117,35 @@ class ReportSynthesizer:
         rows: list[dict[str, str]] = []
         for dimension, keywords in dimensions:
             row: dict[str, str] = {"Dimension": dimension}
+            has_evidence = False
             for entity in entities:
                 matched_papers = [p for p in papers if cls._entity_matches_paper(entity, p)]
                 dimension_claims = [
-                    claim
-                    for paper in matched_papers
+                    claim for paper in matched_papers
                     for claim in claim_by_paper.get(paper.internal_id, [])
                     if cls._claim_matches_dimension(claim, keywords)
                 ]
                 if dimension_claims:
                     selected = dimension_claims[0]
                     row[entity] = f"{selected.claim_text} [{selected.paper_id}]"
+                    has_evidence = True
                 else:
                     row[entity] = "insufficient evidence retrieved"
-            if all(row.get(entity) != "insufficient evidence retrieved" for entity in entities):
+            # A partially evidenced row is useful because it explicitly exposes
+            # which entity lacks support instead of silently dropping the comparison.
+            if has_evidence:
                 rows.append(row)
 
         return rows
 
-    def synthesize_report(
-        self,
-        plan: ResearchPlan,
-        papers: list[Paper],
-        claims: list[Claim],
-        evidence_records: list[EvidenceRecord],
-        contradictions: list[ContradictionRecord],
-        gaps: list[ResearchGap],
-        verifications: list[BibliographicVerificationRecord],
-    ) -> ResearchReport:
-        sources = list(dict.fromkeys(s for p in papers for s in p.sources)) or [
-            "openalex", "semantic_scholar", "crossref", "arxiv", "pubmed",
-        ]
-        findings = [f"[{c.paper_id}] {c.claim_text}" for c in claims[:8]] or [
-            f"Retrieved {len(papers)} relevant academic works addressing '{plan.main_question}'."
-        ]
-        comparisons = [
-            {
-                "paper_id": p.internal_id,
-                "title": p.title,
-                "year": p.year or "N/A",
-                "venue": p.venue or "Conference/Journal",
-                "approach": p.publication_type or "Academic method",
-                "citations": p.citation_count or 0,
-                "tier": p.quality_tier.value,
-            }
-            for p in papers[:6]
-        ]
-        limitations = [
-            f"[{c.paper_id}] {c.claim_text}" for c in claims if c.evidence_type.value == "limitation"
-        ] or [
-            f"[{g.supporting_evidence[0]}] {g.description}" for g in gaps if g.supporting_evidence
-        ]
-
+    def synthesize_report(self, plan: ResearchPlan, papers: list[Paper], claims: list[Claim], evidence_records: list[EvidenceRecord], contradictions: list[ContradictionRecord], gaps: list[ResearchGap], verifications: list[BibliographicVerificationRecord]) -> ResearchReport:
+        sources = list(dict.fromkeys(s for p in papers for s in p.sources)) or ["openalex", "semantic_scholar", "crossref", "arxiv", "pubmed"]
+        findings = [f"[{c.paper_id}] {c.claim_text}" for c in claims[:8]] or [f"Retrieved {len(papers)} relevant academic works addressing '{plan.main_question}'."]
+        comparisons = [{"paper_id": p.internal_id, "title": p.title, "year": p.year or "N/A", "venue": p.venue or "Conference/Journal", "approach": p.publication_type or "Academic method", "citations": p.citation_count or 0, "tier": p.quality_tier.value} for p in papers[:6]]
+        limitations = [f"[{c.paper_id}] {c.claim_text}" for c in claims if c.evidence_type.value == "limitation"] or [f"[{g.supporting_evidence[0]}] {g.description}" for g in gaps if g.supporting_evidence]
         return ResearchReport(
             research_question=plan.main_question,
-            executive_summary=(
-                f"This report examines '{plan.main_question}' using {len(sources)} academic source families and {len(papers)} relevant papers. "
-                + (f"The request was recognized as comparative across {', '.join(plan.entities)}." if plan.comparative else "The request was recognized as a single-topic research task.")
-            ),
+            executive_summary=f"This report examines '{plan.main_question}' using {len(sources)} academic source families and {len(papers)} relevant papers. " + (f"The request was recognized as comparative across {', '.join(plan.entities)}." if plan.comparative else "The request was recognized as a single-topic research task."),
             research_methodology="Systematic multi-pass academic discovery with deterministic deduplication, entity-based relevance ranking, evidence extraction, contradiction analysis, and bibliography verification.",
             academic_sources_searched=sources,
             search_strategy_summary=f"Executed {len(plan.search_queries)} planned queries and retained {len(papers)} relevant papers.",
