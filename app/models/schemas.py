@@ -8,22 +8,19 @@ from pydantic import BaseModel, Field
 
 
 class Author(BaseModel):
-    """Author metadata."""
     name: str
     affiliation: str | None = None
     orcid: str | None = None
 
 
 class QualityTier(str, Enum):
-    """Source quality classification tiers."""
-    TIER_1 = "TIER_1"  # Peer-reviewed original research, official journal/conf, DOI/PubMed records
-    TIER_2 = "TIER_2"  # OpenAlex, Semantic Scholar, Crossref, CORE, arXiv
-    TIER_3 = "TIER_3"  # Institutional repositories, technical reports
-    TIER_4 = "TIER_4"  # Generic web/other (disabled by default)
+    TIER_1 = "TIER_1"
+    TIER_2 = "TIER_2"
+    TIER_3 = "TIER_3"
+    TIER_4 = "TIER_4"
 
 
 class Paper(BaseModel):
-    """Normalized internal representation of an academic paper."""
     internal_id: str = Field(default="", description="Internal traceable ID like P01, P02")
     title: str
     normalized_title: str = ""
@@ -38,21 +35,21 @@ class Paper(BaseModel):
     openalex_id: str | None = None
     url: str | None = None
     pdf_url: str | None = None
-    sources: list[str] = Field(default_factory=list, description="List of source adapters that found this paper")
+    sources: list[str] = Field(default_factory=list)
     citation_count: int | None = None
     publication_type: str | None = None
     is_open_access: bool | None = None
     retrieved_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     quality_tier: QualityTier = QualityTier.TIER_2
-
-    # Ranking & relevance metadata
     relevance_score: float = 0.0
     score_breakdown: dict[str, float] = Field(default_factory=dict)
     matched_passes: list[str] = Field(default_factory=list)
+    full_text_status: str = "not_attempted"  # available | unavailable | failed | not_attempted
+    full_text_source: str | None = None
+    full_text_error: str | None = None
 
 
 class PassType(str, Enum):
-    """Search pass categories."""
     PASS_A_BROAD = "broad"
     PASS_B_EXPANSION = "expansion"
     PASS_C_SUPPORTING = "supporting"
@@ -62,7 +59,6 @@ class PassType(str, Enum):
 
 
 class SearchQuery(BaseModel):
-    """Structured query for academic sources."""
     query: str
     pass_type: PassType
     target_concept: str
@@ -72,7 +68,6 @@ class SearchQuery(BaseModel):
 
 
 class SearchResult(BaseModel):
-    """Results from a search query across sources."""
     query: SearchQuery
     papers: list[Paper] = Field(default_factory=list)
     total_found: int = 0
@@ -80,13 +75,11 @@ class SearchResult(BaseModel):
 
 
 class ResearchObjective(BaseModel):
-    """Specific research goal or sub-objective."""
     objective_id: str
     description: str
 
 
 class ResearchPlan(BaseModel):
-    """Structured academic research plan created by the planner."""
     main_question: str
     research_objectives: list[ResearchObjective] = Field(default_factory=list)
     sub_questions: list[str] = Field(default_factory=list)
@@ -103,7 +96,6 @@ class ResearchPlan(BaseModel):
 
 
 class EvidenceType(str, Enum):
-    """Categorization of evidence supporting a claim."""
     EMPIRICAL_RESULT = "empirical result"
     METHODOLOGICAL_CLAIM = "methodological claim"
     THEORETICAL_CLAIM = "theoretical claim"
@@ -114,7 +106,6 @@ class EvidenceType(str, Enum):
 
 
 class EvidenceStrength(str, Enum):
-    """Heuristic assessment of evidence strength."""
     VERY_STRONG = "VERY STRONG"
     STRONG = "STRONG"
     MODERATE = "MODERATE"
@@ -123,20 +114,24 @@ class EvidenceStrength(str, Enum):
 
 
 class Claim(BaseModel):
-    """Substantive scientific claim extracted from retrieved literature."""
-    claim_id: str = Field(description="Unique claim identifier, e.g. C01")
+    claim_id: str
     claim_text: str
-    paper_id: str = Field(description="Primary paper ID, e.g. P01")
+    paper_id: str
     evidence_type: EvidenceType
     evidence_strength: EvidenceStrength = EvidenceStrength.MODERATE
-    supporting_sources: list[str] = Field(default_factory=list, description="Paper IDs supporting this claim")
-    contradicting_sources: list[str] = Field(default_factory=list, description="Paper IDs questioning/contradicting")
+    supporting_sources: list[str] = Field(default_factory=list)
+    contradicting_sources: list[str] = Field(default_factory=list)
     confidence: float = Field(default=0.7, ge=0.0, le=1.0)
     notes: str = ""
+    evidence_id: str | None = None
+    section: str = "abstract"
+    page_start: int | None = None
+    page_end: int | None = None
+    source_excerpt: str | None = None
+    source_url: str | None = None
 
 
 class EvidenceRecord(BaseModel):
-    """Evidence mapping record connecting claims to papers and excerpts."""
     evidence_id: str
     claim_id: str
     paper_id: str
@@ -144,20 +139,23 @@ class EvidenceRecord(BaseModel):
     evidence_type: EvidenceType
     strength: EvidenceStrength
     source_adapter: str
+    section: str = "abstract"
+    page_start: int | None = None
+    page_end: int | None = None
+    source_url: str | None = None
+    full_text_grounded: bool = False
 
 
 class ContradictionRecord(BaseModel):
-    """Record of scientific disagreements, negative findings, or conflicting results."""
     claim: str
-    supporting_papers: list[str] = Field(default_factory=list, description="Paper IDs e.g. ['P01', 'P03']")
-    contradicting_papers: list[str] = Field(default_factory=list, description="Paper IDs e.g. ['P05']")
+    supporting_papers: list[str] = Field(default_factory=list)
+    contradicting_papers: list[str] = Field(default_factory=list)
     overall_assessment: str
     evidence_discrepancy: str = ""
     notes: str = ""
 
 
 class GapCategory(str, Enum):
-    """Classification of identified unresolved research gaps."""
     DATASET_GAP = "dataset gap"
     METHODOLOGICAL_GAP = "methodological gap"
     EVALUATION_GAP = "evaluation gap"
@@ -174,16 +172,14 @@ class GapCategory(str, Enum):
 
 
 class ResearchGap(BaseModel):
-    """Categorized unresolved academic research gap backed by literature."""
     gap_id: str
     category: GapCategory
     description: str
-    supporting_evidence: list[str] = Field(default_factory=list, description="Paper IDs highlighting this gap")
+    supporting_evidence: list[str] = Field(default_factory=list)
     proposed_directions: list[str] = Field(default_factory=list)
 
 
 class BibliographicVerificationRecord(BaseModel):
-    """Verification record cross-checking a paper across independent databases."""
     paper_id: str
     doi: str | None = None
     title_matches: bool = True
@@ -193,7 +189,6 @@ class BibliographicVerificationRecord(BaseModel):
 
 
 class ResearchReport(BaseModel):
-    """Complete 16-section structured academic research report."""
     research_question: str
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     executive_summary: str
@@ -212,4 +207,3 @@ class ResearchReport(BaseModel):
     conclusion: str
     papers: list[Paper] = Field(default_factory=list)
     verification_records: list[BibliographicVerificationRecord] = Field(default_factory=list)
-
