@@ -16,7 +16,7 @@ def test_chunk_sections_only_target_sections():
         ("results", 4, 5, "Results show improved accuracy under the reported evaluation setting. " * 8),
     ]
     paper = Paper(internal_id="P01", title="Test")
-    chunks = ingestor._chunk_sections(paper, sections)
+    chunks = ingestor._chunk_sections(sections, paper)
     assert chunks
     assert {c.section for c in chunks} == {"methods", "results"}
     assert all(c.paper_id == "P01" for c in chunks)
