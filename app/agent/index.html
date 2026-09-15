@@ -1,0 +1,97 @@
+import { useMemo, useState } from "react";
+import Layout from "../components/Layout";
+import Button from "../components/Button";
+import Modal from "../components/Modal";
+import ShelfBook from "../components/ShelfBook";
+import ContributeForm from "../components/ContributeForm";
+import { books, getCourse } from "../data/mockData";
+
+const BOOKS_PER_SHELF = 8;
+
+export default function Bookshelf() {
+  const [query, setQuery] = useState("");
+  const [addOpen, setAddOpen] = useState(false);
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return books;
+    const needle = query.toLowerCase();
+    return books.filter((b) => {
+      const course = getCourse(b.courseId);
+      return (
+        b.title.toLowerCase().includes(needle) ||
+        course?.title.toLowerCase().includes(needle)
+      );
+    });
+  }, [query]);
+
+  const shelves: typeof books[] = [];
+  for (let i = 0; i < filtered.length; i += BOOKS_PER_SHELF) {
+    shelves.push(filtered.slice(i, i + BOOKS_PER_SHELF));
+  }
+
+  return (
+    <Layout>
+      <section className="border-b border-line px-5 py-14 sm:px-8 sm:py-16">
+        <div className="mx-auto max-w-content">
+          <p className="call-number">Bookshelf</p>
+          <h1 className="mt-3 max-w-xl font-serif text-[32px] leading-tight text-ink sm:text-[42px]">
+            Every textbook, on one shelf.
+          </h1>
+          <p className="mt-3 max-w-lg text-[15.5px] text-ink-soft">
+            The reference books your professors actually cite — scanned,
+            searchable, and organized by the course that needs them.
+          </p>
+
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex flex-1 items-center gap-3 rounded-[6px] border border-line bg-card px-3.5 py-2.5">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="shrink-0 text-ink-faint">
+                <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+                <path d="M21 21L16.65 16.65" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search by course name…"
+                className="flex-1 bg-transparent text-[14.5px] text-ink placeholder:text-ink-faint focus:outline-none"
+              />
+            </div>
+            <Button onClick={() => setAddOpen(true)} variant="secondary" className="shrink-0">
+              + Add a Book
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <section className="px-5 py-14 sm:px-8">
+        <div className="mx-auto max-w-content">
+          {shelves.length === 0 && (
+            <p className="py-16 text-center text-ink-faint">No books matched your search.</p>
+          )}
+          <div className="space-y-14">
+            {shelves.map((shelfBooks, i) => (
+              <div key={i}>
+                <div className="flex flex-wrap items-end justify-center gap-x-5 gap-y-8 px-4 pb-1 sm:justify-start sm:gap-x-6">
+                  {shelfBooks.map((b) => (
+                    <ShelfBook key={b.id} book={b} />
+                  ))}
+                </div>
+                {/* wooden shelf ledge */}
+                <div className="relative mt-1 h-4 rounded-[3px] bg-gradient-to-b from-[#9C6B3A] to-[#6B4020] shadow-[0_10px_16px_-6px_rgba(0,0,0,0.4)]">
+                  <div className="absolute inset-x-0 top-0 h-[2px] bg-white/15" />
+                </div>
+                <div className="mx-auto h-3 w-[97%] rounded-b-[3px] bg-[#4A2E18]/70 blur-[1px]" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add a Book to the Shelf">
+        <p className="-mt-2 mb-4 text-[13.5px] text-ink-soft">
+          Share a textbook scan or a link so classmates can find it here.
+        </p>
+        <ContributeForm compact defaultType="reference" onSubmitted={() => setAddOpen(false)} />
+      </Modal>
+    </Layout>
+  );
+}

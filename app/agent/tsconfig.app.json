@@ -1,0 +1,107 @@
+import Layout from "../components/Layout";
+import ContributeForm from "../components/ContributeForm";
+
+const steps = [
+  {
+    n: "01",
+    title: "Upload & index",
+    body: "Drop your file and tell us which course and category it belongs to.",
+  },
+  {
+    n: "02",
+    title: "Review & verify",
+    body: "A moderator checks the file for quality and confirms it isn't confidential or copyrighted.",
+  },
+  {
+    n: "03",
+    title: "Publish & earn points",
+    body: "Once approved, your file goes live on the course page and you climb the Honor Roll.",
+  },
+];
+
+const dos = [
+  "Upload useful academic resources",
+  "Provide correct course information",
+  "Upload clear, legible files",
+];
+
+const donts = [
+  "Upload active or ongoing assignments",
+  "Upload confidential material",
+  "Upload personal or private documents",
+  "Upload copyrighted or pirated material",
+];
+
+export default function Contribute() {
+  return (
+    <Layout>
+      <section className="border-b border-line px-5 py-14 sm:px-8 sm:py-16">
+        <div className="mx-auto max-w-content">
+          <p className="call-number">Contribute</p>
+          <h1 className="mt-3 max-w-xl font-serif text-[32px] leading-tight text-ink sm:text-[42px]">
+            Share what got you through the semester.
+          </h1>
+          <p className="mt-3 max-w-lg text-[15.5px] text-ink-soft">
+            Every past paper and note you upload saves another student
+            hours of searching. It takes less than two minutes.
+          </p>
+
+          <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-3">
+            {steps.map((s) => (
+              <div key={s.n}>
+                <p className="font-mono text-[13px] text-oxblood">{s.n}</p>
+                <h3 className="mt-2 font-serif text-[18px] text-ink">{s.title}</h3>
+                <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-soft">{s.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="px-5 py-14 sm:px-8">
+        <div className="mx-auto grid max-w-content gap-10 lg:grid-cols-[1fr_360px]">
+          <div className="rounded-[9px] border border-line bg-card p-6 shadow-card sm:p-8">
+            <h2 className="font-serif text-[21px] text-ink">Share course resources</h2>
+            <p className="mt-1.5 text-[13.5px] text-ink-soft">
+              Help fellow students by uploading past papers, lecture notes,
+              or extras.
+            </p>
+            <div className="mt-6">
+              <ContributeForm />
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div className="rounded-[8px] border border-line bg-card p-5">
+              <h3 className="font-serif text-[17px] text-ink">Contribution points</h3>
+              <ul className="mt-3 space-y-2.5 text-[13.5px]">
+                <li className="flex justify-between"><span className="text-ink-soft">Past Papers</span><span className="font-mono text-ink">+10</span></li>
+                <li className="flex justify-between"><span className="text-ink-soft">Extras</span><span className="font-mono text-ink">+8</span></li>
+                <li className="flex justify-between"><span className="text-ink-soft">Notes</span><span className="font-mono text-ink">+5</span></li>
+                <li className="flex justify-between"><span className="text-ink-soft">References</span><span className="font-mono text-ink">+2</span></li>
+              </ul>
+            </div>
+
+            <div className="rounded-[8px] border border-line bg-card p-5">
+              <h3 className="font-serif text-[17px] text-ink">Before you submit</h3>
+              <div className="mt-3 space-y-1.5">
+                {dos.map((d) => (
+                  <p key={d} className="flex items-start gap-2 text-[13px] text-ink-soft">
+                    <span className="mt-0.5 shrink-0 text-moss">✓</span> {d}
+                  </p>
+                ))}
+              </div>
+              <div className="mt-3 space-y-1.5 border-t border-line pt-3">
+                {donts.map((d) => (
+                  <p key={d} className="flex items-start gap-2 text-[13px] text-ink-soft">
+                    <span className="mt-0.5 shrink-0 text-oxblood">✕</span> {d}
+                  </p>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </Layout>
+  );
+}
