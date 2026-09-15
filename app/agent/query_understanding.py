@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Callable
 
 from pydantic import ValidationError
 
@@ -31,6 +30,17 @@ COMMON_ENTITY_ALIASES: dict[str, tuple[str, ...]] = {
     "artificial intelligence": ("AI", "Artificial Intelligence"),
     "ml": ("ML", "Machine Learning"),
     "machine learning": ("ML", "Machine Learning"),
+}
+
+# Words that describe the question/task rather than the research subject.
+FALLBACK_STOPWORDS = {
+    "a", "an", "the", "is", "are", "was", "were", "be", "being", "been",
+    "how", "what", "why", "when", "where", "which", "who", "does", "do", "did",
+    "can", "could", "should", "would", "will", "about", "for", "to", "of", "in",
+    "on", "with", "and", "or", "as", "by", "from", "into", "than", "that",
+    "this", "these", "those", "it", "its", "their", "them", "me", "you", "we",
+    "recent", "latest", "major", "unresolved", "identify", "discuss", "describe",
+    "research", "gap", "gaps", "work", "methods", "method", "approach", "approaches",
 }
 
 SYSTEM_PROMPT = """You are a strict academic query-understanding component. Extract only substantive research entities from the user's question. Ignore formatting and answer instructions. Never treat words such as table, explain, compare, list, what, how, distinction, or summarize as research entities. Return only valid JSON matching the requested schema."""
@@ -86,12 +96,27 @@ class QueryUnderstandingService:
     def _deterministic_entity_aliases(self, cleaned: str) -> list[str]:
         found: list[str] = []
         lower = cleaned.lower()
-        for key, aliases in COMMON_ENTITY_ALIASES.items():
+        # Longer aliases first so "machine learning" is recognized before "ml".
+        for key in sorted(COMMON_ENTITY_ALIASES, key=len, reverse=True):
+            aliases = COMMON_ENTITY_ALIASES[key]
             if re.search(rf"\b{re.escape(key)}\b", lower):
                 canonical = aliases[0]
                 if canonical not in found:
                     found.append(canonical)
         return found
+
+    @staticmethod
+    def _deterministic_generic_entity(cleaned: str) -> list[str]:
+        """Recover a conservative topic when the LLM is unavailable or returns the wrong schema."""
+        text = re.sub(r"[-_/]", " ", cleaned.lower())
+        text = re.sub(r"[^a-z0-9\s]", " ", text)
+        tokens = [token for token in text.split() if token not in FALLBACK_STOPWORDS]
+        if not tokens:
+            return []
+
+        # Keep a short, search-friendly noun/topic phrase rather than using the raw question.
+        phrase = " ".join(tokens[:8]).strip()
+        return [phrase] if phrase else []
 
     def understand(self, question: str) -> tuple[QueryUnderstanding, list[str], str]:
         if not question or not question.strip():
@@ -118,17 +143,19 @@ class QueryUnderstandingService:
                 last_error = exc
                 logger.warning("Query understanding validation attempt %d failed: %s", attempt + 1, exc)
 
-        # Only a narrow, deterministic alias recognizer is permitted as recovery.
-        # It never uses the raw sentence as a search query.
         aliases = self._deterministic_entity_aliases(cleaned)
-        if aliases:
-            comparative = len(aliases) >= 2 and any(
-                word in question.lower() for word in ("compare", "comparison", "distinction", "distinguish", "contrast", "table")
+        entities = aliases or self._deterministic_generic_entity(cleaned)
+        if entities:
+            lower_question = question.lower()
+            comparative = any(
+                re.search(rf"\b{re.escape(word)}\b", lower_question)
+                for word in ("compare", "comparison", "distinction", "distinguish", "contrast")
             )
+            output_format = "comparison_table" if comparative else "report"
             return QueryUnderstanding(
-                entities=aliases,
+                entities=entities,
                 comparative=comparative,
-                output_format="comparison_table" if comparative else "report",
+                output_format=output_format,
             ), instructions, cleaned
 
         raise QueryUnderstandingError(f"Unable to validate query understanding: {last_error}")
