@@ -1,15 +1,18 @@
 """Streamlit UI for the real academic research pipeline."""
 from __future__ import annotations
 
-import json
+import os
 import sys
 from pathlib import Path
 
-# Ensure imports resolve to this repository's local `app` package when
-# Streamlit executes this file from the ui directory.
+# Streamlit executes this file with `ui/` as the script directory. Put the
+# repository root first so `app` always means this project's package.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+os.chdir(PROJECT_ROOT)
+project_root_str = str(PROJECT_ROOT)
+if project_root_str in sys.path:
+    sys.path.remove(project_root_str)
+sys.path.insert(0, project_root_str)
 
 import streamlit as st
 
@@ -21,11 +24,16 @@ st.set_page_config(page_title="Academic Research Agent", page_icon="📚", layou
 st.title("Academic Research Agent")
 st.caption("Evidence-grounded multi-pass literature research. Comparative phrasing triggers table mode.")
 
-question = st.text_area("Research question", placeholder="What is AI and how is it different about ML? Provide me a table of distinction", height=120)
+question = st.text_area(
+    "Research question",
+    placeholder="What is AI and how is it different about ML? Provide me a table of distinction",
+    height=120,
+)
 
 if question:
     try:
         from app.agent.planner import ResearchPlanner
+
         preview_planner = ResearchPlanner()
         understanding = preview_planner.understand_question(question)
         st.session_state["planner_preview"] = understanding
@@ -33,7 +41,10 @@ if question:
             st.write("**Entities:**", ", ".join(understanding.entities))
             st.write("**Comparative mode:**", "Yes" if understanding.comparative else "No")
             st.write("**Output format:**", understanding.output_format)
-            st.write("**Instructions stripped:**", ", ".join(preview_planner.last_stripped_instructions) or "None")
+            st.write(
+                "**Instructions stripped:**",
+                ", ".join(preview_planner.last_stripped_instructions) or "None",
+            )
     except Exception as exc:
         st.error(f"Query understanding failed: {exc}")
 
