@@ -45,7 +45,6 @@ class ClaimExtractor:
                         claim.claim_id = f"C{counter:02d}"
                         claims.append(claim)
                         counter += 1
-                    # Keep reports bounded while covering multiple sections.
                     if len(claims) >= max_papers * 8:
                         break
             elif paper.abstract and len(paper.abstract) >= 40:
@@ -58,12 +57,8 @@ class ClaimExtractor:
 
     def _extract_chunk_claims(self, paper: Paper, chunk: FullTextChunk, start_id: int) -> list[Claim]:
         prompt = CLAIM_EXTRACTION_USER_TEMPLATE.format(
-            paper_id=paper.internal_id,
-            title=paper.title,
-            abstract=chunk.text,
-            section=chunk.section,
-            page_start=chunk.page_start or "unknown",
-            page_end=chunk.page_end or "unknown",
+            paper_id=paper.internal_id, title=paper.title, abstract=chunk.text,
+            section=chunk.section, page_start=chunk.page_start or "unknown", page_end=chunk.page_end or "unknown",
         )
         try:
             raw_json = self.client.generate_json(prompt=prompt, system_prompt=CLAIM_EXTRACTION_SYSTEM_PROMPT, temperature=0.1)
@@ -89,7 +84,7 @@ class ClaimExtractor:
         prompt = CLAIM_EXTRACTION_USER_TEMPLATE.format(
             paper_id=paper.internal_id, title=paper.title, abstract=paper.abstract,
             section="abstract", page_start="unknown", page_end="unknown",
-        )\        
+        )
         try:
             raw_json = self.client.generate_json(prompt=prompt, system_prompt=CLAIM_EXTRACTION_SYSTEM_PROMPT, temperature=0.1)
             if isinstance(raw_json, list):
@@ -124,10 +119,13 @@ class ClaimExtractor:
             etype = next((et for pat, et in patterns if re.search(pat, sentence, re.I)), None)
             if etype:
                 note = "ABSTRACT-ONLY: open-access full text was unavailable." if abstract_only else f"Extracted from {section} section."
-                result.append(Claim(claim_id=f"C{start_id:02d}", claim_text=sentence, paper_id=paper.internal_id,
-                    evidence_type=etype, supporting_sources=[paper.internal_id], confidence=0.72 if not abstract_only else 0.65,
-                    notes=note, section=section, page_start=page_start, page_end=page_end,
-                    source_excerpt=sentence, source_url=source_url))
+                result.append(Claim(
+                    claim_id=f"C{start_id:02d}", claim_text=sentence, paper_id=paper.internal_id,
+                    evidence_type=etype, supporting_sources=[paper.internal_id],
+                    confidence=0.72 if not abstract_only else 0.65, notes=note,
+                    section=section, page_start=page_start, page_end=page_end,
+                    source_excerpt=sentence, source_url=source_url,
+                ))
             if len(result) >= 2:
                 break
         return result
