@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from app.models.schemas import ResearchPlan, ResearchObjective, SearchQuery, PassType, QueryUnderstanding
@@ -69,18 +70,14 @@ class ResearchPlanner:
         if not queries:
             return self._generate_deterministic_fallback(question, understanding)
 
-        # Do not allow LLM output to inject a raw-question query. Ensure A-F coverage,
-        # and add G for comparative requests.
+        # Ensure every research pass is represented. This keeps partial LLM plans
+        # compatible with the full A-G retrieval strategy.
         fallback = self._generate_deterministic_fallback(question, understanding).search_queries
         by_pass = {q.pass_type: q for q in fallback}
         present = {q.pass_type for q in queries}
         for pt in PassType:
-            if pt == PassType.PASS_G_COMPARATIVE and not understanding.comparative:
-                continue
             if pt not in present and pt in by_pass:
                 queries.append(by_pass[pt])
-        if understanding.comparative and PassType.PASS_G_COMPARATIVE not in present:
-            queries.append(by_pass[PassType.PASS_G_COMPARATIVE])
 
         return ResearchPlan(
             main_question=question,
@@ -102,8 +99,43 @@ class ResearchPlanner:
             stripped_instructions=self.last_stripped_instructions,
         )
 
+    @staticmethod
+    def _comparison_entities(entities: list[str], cleaned_question: str) -> list[str]:
+        """Return two conservative comparison subjects when the LLM gives one broad entity."""
+        if len(entities) >= 2:
+            return entities
+
+        topic = entities[0] if entities else cleaned_question.strip()
+        text = re.sub(r"\s+", " ", cleaned_question).strip()
+
+        # Common comparative constructions: X vs Y / X versus Y / between X and Y.
+        match = re.search(r"\b(.+?)\s+(?:vs\.?|versus|against)\s+(.+)$", text, re.IGNORECASE)
+        if match:
+            parts = [match.group(1).strip(" ,.:;"), match.group(2).strip(" ,.:;")]
+            if all(parts):
+                return parts
+
+        match = re.search(r"\bbetween\s+(.+?)\s+and\s+(.+?)(?:\s+(?:for|to|that|which)\b|$)", text, re.IGNORECASE)
+        if match:
+            parts = [match.group(1).strip(" ,.:;"), match.group(2).strip(" ,.:;")]
+            if all(parts):
+                return parts
+
+        # For "compare X methods for Y", separate the method family from its domain.
+        match = re.search(r"^(.+?\bmethods?)\s+for\s+(.+)$", text, re.IGNORECASE)
+        if match:
+            left = match.group(1).strip(" ,.:;")
+            right = match.group(2).strip(" ,.:;")
+            right = re.sub(r"\b(?:and|identify)\b.*$", "", right, flags=re.IGNORECASE).strip(" ,.:;")
+            if left and right:
+                return [left, right]
+
+        # Safe fallback: preserve the single topic instead of indexing into a
+        # nonexistent second entity. The planner can still execute all passes.
+        return [topic]
+
     def _generate_deterministic_fallback(self, question: str, understanding: QueryUnderstanding) -> ResearchPlan:
-        entities = understanding.entities
+        entities = self._comparison_entities(understanding.entities, self.last_cleaned_question or question)
         topic = " AND ".join(entities)
         queries: list[SearchQuery] = []
         templates = [
@@ -115,21 +147,48 @@ class ResearchPlanner:
             (PassType.PASS_F_FOUNDATIONAL, topic, "foundational literature"),
         ]
         for pt, query, concept in templates:
-            queries.append(SearchQuery(query=query, pass_type=pt, target_concept=concept, year_start=2024 if pt == PassType.PASS_E_RECENT else (2015 if pt == PassType.PASS_F_FOUNDATIONAL else None), year_end=2026 if pt == PassType.PASS_E_RECENT else (2021 if pt == PassType.PASS_F_FOUNDATIONAL else None), rationale=f"{pt.value} search for substantive entities."))
-        if understanding.comparative:
-            queries.append(SearchQuery(query=f'"{entities[0]}" "{entities[1]}" comparison', pass_type=PassType.PASS_G_COMPARATIVE, target_concept="direct comparison", rationale="Direct comparative evidence."))
+            queries.append(SearchQuery(
+                query=query,
+                pass_type=pt,
+                target_concept=concept,
+                year_start=2024 if pt == PassType.PASS_E_RECENT else (2015 if pt == PassType.PASS_F_FOUNDATIONAL else None),
+                year_end=2026 if pt == PassType.PASS_E_RECENT else (2021 if pt == PassType.PASS_F_FOUNDATIONAL else None),
+                rationale=f"{pt.value} search for substantive entities.",
+            ))
+
+        # Pass G is part of the complete A-G planner contract. When the query is
+        # not comparative, it still provides a neutral comparative/alternatives
+        # search rather than being omitted from a partial plan.
+        if understanding.comparative and len(entities) >= 2:
+            comparative_query = f'"{entities[0]}" "{entities[1]}" comparison'
+        else:
+            comparative_query = f"{topic} alternatives comparison"
+        queries.append(SearchQuery(
+            query=comparative_query,
+            pass_type=PassType.PASS_G_COMPARATIVE,
+            target_concept="direct comparison" if understanding.comparative else "comparative alternatives",
+            rationale="Comparative evidence pass in the complete A-G retrieval strategy.",
+        ))
 
         return ResearchPlan(
             main_question=question,
-            research_objectives=[ResearchObjective(objective_id="OBJ-1", description=f"Investigate {topic}"), ResearchObjective(objective_id="OBJ-2", description="Identify evidence, trade-offs, and gaps")],
+            research_objectives=[
+                ResearchObjective(objective_id="OBJ-1", description=f"Investigate {topic}"),
+                ResearchObjective(objective_id="OBJ-2", description="Identify evidence, trade-offs, and gaps"),
+            ],
             sub_questions=[f"What are the defining characteristics of {topic}?", f"What evidence distinguishes the entities?"],
-            important_concepts=entities,
-            synonyms={e: self.query_understanding.search_terms(understanding) for e in entities},
-            related_terminology=[], inclusion_criteria=["Academic publications directly relevant to the extracted entities"],
+            important_concepts=understanding.entities,
+            synonyms={e: self.query_understanding.search_terms(understanding) for e in understanding.entities},
+            related_terminology=[],
+            inclusion_criteria=["Academic publications directly relevant to the extracted entities"],
             exclusion_criteria=["Records with no substantive relevance to the extracted entities"],
             search_queries=queries,
-            recent_literature_strategy="Target recent evidence.", foundational_literature_strategy="Trace foundational evidence.",
-            supporting_evidence_strategy="Verify empirical evidence.", contradiction_falsification_strategy="Seek contradictory evidence and failure modes.",
-            entities=entities, comparative=understanding.comparative, output_format=understanding.output_format,
+            recent_literature_strategy="Target recent evidence.",
+            foundational_literature_strategy="Trace foundational evidence.",
+            supporting_evidence_strategy="Verify empirical evidence.",
+            contradiction_falsification_strategy="Seek contradictory evidence and failure modes.",
+            entities=understanding.entities,
+            comparative=understanding.comparative,
+            output_format=understanding.output_format,
             stripped_instructions=self.last_stripped_instructions,
         )
